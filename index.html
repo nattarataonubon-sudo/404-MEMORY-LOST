@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>404: MEMORY LOST</title>
+<style>
+  @font-face { font-family: 'sys'; src: local('Consolas'); }
+  :root{
+    --bg:#050604;
+    --amber:#ffb000;
+    --amber-dim:#8a5f00;
+    --red:#ff2b2b;
+    --green:#3dff6e;
+    --cyan:#4dfff0;
+    --paper:#c9c39a;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    background:var(--bg);
+    color:var(--amber);
+    font-family:'Courier New', 'TH Sarabun New', monospace;
+    overflow:hidden;
+  }
+  #app{position:relative;width:100vw;height:100vh;overflow:hidden;}
+
+  /* ---------- CRT / scanline / vhs layers ---------- */
+  .crt::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9998;
+    background:repeating-linear-gradient(
+      to bottom, rgba(0,0,0,0.0) 0px, rgba(0,0,0,0.0) 1px,
+      rgba(0,0,0,0.18) 2px, rgba(0,0,0,0.18) 3px
+    );
+    mix-blend-mode:multiply;
+  }
+  .crt::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:9999;
+    background:radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(0,0,0,0.55) 100%);
+  }
+  @keyframes flicker{
+    0%{opacity:1;} 3%{opacity:.86;} 4%{opacity:1;} 8%{opacity:.92;} 9%{opacity:1;}
+    50%{opacity:1;} 51%{opacity:.9;} 52%{opacity:1;} 100%{opacity:1;}
+  }
+  .flicker{animation:flicker 6s infinite;}
+
+  @keyframes vhsjitter{
+    0%{transform:translate(0,0);} 20%{transform:translate(-1px,0);}
+    40%{transform:translate(1px,0);} 60%{transform:translate(0,-1px);}
+    80%{transform:translate(0,1px);} 100%{transform:translate(0,0);}
+  }
+  .vhs{animation:vhsjitter 0.35s steps(2) infinite;}
+
+  .glitch{position:relative; display:inline-block;}
+  .glitch::before, .glitch::after{
+    content:attr(data-text); position:absolute; left:0; top:0; width:100%; overflow:hidden;
+    background:var(--bg);
+  }
+  .glitch::before{
+    left:2px; text-shadow:-1px 0 var(--red); animation: glitchTop 2.5s infinite linear alternate-reverse;
+  }
+  .glitch::after{
+    left:-2px; text-shadow:-1px 0 var(--cyan); animation: glitchBot 2.1s infinite linear alternate-reverse;
+  }
+  @keyframes glitchTop{
+    0%{clip-path:inset(0 0 85% 0);} 20%{clip-path:inset(10% 0 60% 0);}
+    40%{clip-path:inset(70% 0 5% 0);} 60%{clip-path:inset(30% 0 40% 0);}
+    80%{clip-path:inset(50% 0 20% 0);} 100%{clip-path:inset(5% 0 80% 0);}
+  }
+  @keyframes glitchBot{
+    0%{clip-path:inset(60% 0 10% 0);} 25%{clip-path:inset(10% 0 70% 0);}
+    50%{clip-path:inset(40% 0 30% 0);} 75%{clip-path:inset(80% 0 5% 0);}
+    100%{clip-path:inset(20% 0 55% 0);}
+  }
+
+  .corrupt-flash{animation:corruptFlash .08s steps(1) 3;}
+  @keyframes corruptFlash{
+    0%{filter:invert(0);} 50%{filter:invert(1) hue-rotate(180deg);} 100%{filter:invert(0);}
+  }
+
+  ::selection{background:var(--amber);color:#000;}
+  a{color:var(--cyan);}
+
+  #matrixCanvas{position:fixed;inset:0;z-index:0;opacity:.35;}
+
+  .screen{
+    position:relative; z-index:2; width:100%; height:100%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    padding:24px; text-align:center;
+  }
+  .hidden{display:none !important;}
+
+  .btn{
+    background:transparent;border:1px solid var(--amber);color:var(--amber);
+    padding:10px 22px;font-family:inherit;font-size:15px;letter-spacing:2px;
+    cursor:pointer;transition:.15s; margin:6px;
+  }
+  .btn:hover{background:var(--amber);color:#000;box-shadow:0 0 18px var(--amber);}
+  .btn.red{border-color:var(--red);color:var(--red);}
+  .btn.red:hover{background:var(--red);color:#000;box-shadow:0 0 18px var(--red);}
+  .btn.dim{border-color:var(--amber-dim);color:var(--amber-dim);}
+
+  .blink{animation:blinkA 1s steps(1) infinite;}
+  @keyframes blinkA{50%{opacity:0;}}
+
+  /* ---- boot ---- */
+  #bootTitle{font-size:clamp(20px,4vw,34px);letter-spacing:4px;margin-bottom:8px;}
+  #bootSub{color:var(--paper);opacity:.8;max-width:560px;line-height:1.8;font-size:15px;margin-bottom:26px;min-height:3em;}
+
+  /* ---- topbar / desktop ---- */
+  .topbar{
+    position:fixed;top:0;left:0;right:0;z-index:3;
+    display:flex;align-items:center;gap:10px;
+    padding:8px 14px;border-bottom:1px solid var(--amber-dim);
+    background:rgba(5,6,4,.92);font-size:12px;letter-spacing:1px;
+  }
+  .topbar .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);}
+  .addrbar{
+    flex:1;display:flex;align-items:center;gap:6px;
+    border:1px solid var(--amber-dim); padding:4px 8px;
+  }
+  .addrbar input{
+    flex:1;background:transparent;border:none;outline:none;color:var(--amber);
+    font-family:inherit;font-size:13px;
+  }
+  .topbtn{cursor:pointer;color:var(--amber-dim);border:1px solid var(--amber-dim);padding:3px 8px;font-size:11px;}
+  .topbtn:hover{color:var(--amber);border-color:var(--amber);}
+
+  .desktop-wrap{width:100%;height:100%;padding-top:52px;overflow-y:auto;}
+  .status{max-width:640px;margin:10px auto 0;font-size:13px;color:var(--paper);opacity:.75;text-align:left;padding:0 16px;}
+  .icons{
+    display:flex;flex-wrap:wrap;gap:26px;justify-content:center;
+    max-width:760px;margin:30px auto;padding:0 16px;
+  }
+  .icon{width:110px;cursor:pointer;user-select:none;}
+  .icon .glyph{
+    font-size:34px;border:1px solid var(--amber-dim);width:72px;height:60px;
+    display:flex;align-items:center;justify-content:center;margin:0 auto 8px;
+  }
+  .icon:hover .glyph{border-color:var(--amber);box-shadow:0 0 10px var(--amber-dim);}
+  .icon .label{font-size:11.5px;line-height:1.3;color:var(--paper);}
+  .icon.locked .glyph{color:var(--red);border-color:#5a1414;}
+  .icon.new .glyph{color:var(--red);border-color:var(--red);animation:pulseRed 1.2s infinite;}
+  @keyframes pulseRed{50%{box-shadow:0 0 14px var(--red);}}
+
+  .panel{
+    max-width:640px;margin:10px auto 60px;text-align:left;background:rgba(20,16,4,.35);
+    border:1px solid var(--amber-dim);padding:20px 22px;font-size:14px;line-height:1.9;
+    white-space:pre-wrap;
+  }
+  .panel h3{margin-top:0;color:var(--amber);letter-spacing:1px;font-size:15px;}
+  .close-panel{float:right;cursor:pointer;color:var(--amber-dim);}
+  .close-panel:hover{color:var(--red);}
+
+  /* ---- terminal / route pages ---- */
+  .termbody{max-width:640px;margin:16px auto 60px;text-align:left;padding:0 16px;font-size:14px;line-height:1.9;}
+  code.enc{color:var(--cyan);letter-spacing:1px;word-break:break-all;}
+  .clue{border-left:2px solid var(--amber-dim);padding:8px 14px;margin:14px 0;background:rgba(255,255,255,.02);}
+  .route-list a{display:inline-block;margin:4px 10px 4px 0;cursor:pointer;}
+  .warn{color:var(--red);}
+  .ok{color:var(--green);}
+
+  /* ---- chat ---- */
+  .chatwrap{width:100%;max-width:640px;margin:60px auto 0;height:calc(100vh - 130px);display:flex;flex-direction:column;padding:0 16px;}
+  .chatlog{flex:1;overflow-y:auto;padding:10px 4px;font-size:14px;line-height:1.7;}
+  .msg{margin-bottom:16px;text-align:left;}
+  .msg.me{color:var(--paper);}
+  .msg.ai{color:var(--amber);}
+  .msg .who{font-size:11px;letter-spacing:2px;opacity:.6;display:block;margin-bottom:2px;}
+  .chatinput{display:flex;gap:8px;border-top:1px solid var(--amber-dim);padding:10px 4px;}
+  .chatinput input{flex:1;background:transparent;border:1px solid var(--amber-dim);color:var(--amber);padding:9px 10px;font-family:inherit;outline:none;}
+  .chatinput input:focus{border-color:var(--amber);}
+
+  footer.hint{position:fixed;bottom:8px;left:0;right:0;text-align:center;font-size:11px;color:var(--amber-dim);z-index:3;letter-spacing:1px;}
+
+  .typed::after{content:'▋';animation:blinkA .8s steps(1) infinite;}
+
+  @media (max-width:520px){
+    .icons{gap:16px;} .icon{width:84px;} .icon .glyph{width:58px;height:50px;font-size:26px;}
+  }
+</style>
+</head>
+<body class="crt">
+<canvas id="matrixCanvas"></canvas>
+<div id="app"></div>
+<footer class="hint" id="hintBar"></footer>
+
+<script>
+/* =========================================================
+   404: MEMORY LOST — persistent horror-ARG shell
+   ========================================================= */
+
+const app = document.getElementById('app');
+const hintBar = document.getElementById('hintBar');
+
+let META = null; // loaded from window.storage
+const DEFAULT_META = () => ({
+  firstVisit: new Date().toISOString(),
+  visits: 0,
+  lastVisit: null,
+  filesOpened: [],
+  cipherSolved: {archive:false, server:false, root:false, y1999:false},
+  routesFound: [],
+  aiChatCount: 0,
+  aiTurns: [], // short log of exchanges for continuity flavor
+  nullVisited: false,
+  lostVisited: false,
+  secretFileFound: false,
+  endingSeen: null
+});
+
+async function loadMeta(){
+  try{
+    const r = await window.storage.get('meta', false);
+    META = r ? JSON.parse(r.value) : DEFAULT_META();
+  }catch(e){
+    META = DEFAULT_META();
+  }
+  META.visits += 1;
+  META.lastVisit = new Date().toISOString();
+  await saveMeta();
+}
+async function saveMeta(){
+  try{ await window.storage.set('meta', JSON.stringify(META), false); }catch(e){ /* best effort */ }
+}
+function daysSinceFirst(){
+  const a = new Date(META.firstVisit), b = new Date();
+  return Math.floor((b-a)/86400000);
+}
+
+/* ---------- tiny sound engine (WebAudio, no assets) ---------- */
+let actx;
+function ac(){ if(!actx) actx = new (window.AudioContext||window.webkitAudioContext)(); return actx; }
+function keyClick(){
+  try{
+    const c = ac(); const o = c.createOscillator(); const g = c.createGain();
+    o.type='square'; o.frequency.value = 1200 + Math.random()*400;
+    g.gain.value = 0.02;
+    o.connect(g); g.connect(c.destination);
+    o.start(); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime+0.04);
+    o.stop(c.currentTime+0.05);
+  }catch(e){}
+}
+function staticBurst(dur=0.4){
+  try{
+    const c = ac();
+    const bufferSize = c.sampleRate*dur;
+    const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
+    const data = buffer.getChannelData(0);
+    for(let i=0;i<bufferSize;i++) data[i] = (Math.random()*2-1)*0.15;
+    const src = c.createBufferSource(); src.buffer = buffer;
+    const g = c.createGain(); g.gain.value=0.5;
+    src.connect(g); g.connect(c.destination);
+    src.start();
+  }catch(e){}
+}
+function hum(on){
+  try{
+    const c = ac();
+    if(on && !window.__hum){
+      const o = c.createOscillator(); const g = c.createGain();
+      o.type='sine'; o.frequency.value=60; g.gain.value=0.015;
+      o.connect(g); g.connect(c.destination); o.start();
+      window.__hum = {o,g};
+    }
+  }catch(e){}
+}
+
+/* ---------- typewriter ---------- */
+function typeInto(el, text, speed=22, cb){
+  el.textContent='';
+  el.classList.add('typed');
+  let i=0;
+  const iv = setInterval(()=>{
+    el.textContent += text[i];
+    if(Math.random()<0.35) keyClick();
+    i++;
+    if(i>=text.length){ clearInterval(iv); el.classList.remove('typed'); if(cb) cb(); }
+  }, speed);
+}
+
+/* ---------- ciphers ---------- */
+function toBase64(s){ return btoa(unescape(encodeURIComponent(s))); }
+function rot13(s){ return s.replace(/[a-zA-Z]/g, c=>{
+  const base = c<='Z'?65:97; return String.fromCharCode((c.charCodeAt(0)-base+13)%26+base);
+}); }
+function toMorse(s){
+  const map={A:'.-',B:'-...',C:'-.-.',D:'-..',E:'.',F:'..-.',G:'--.',H:'....',I:'..',J:'.---',K:'-.-',L:'.-..',M:'--',N:'-.',O:'---',P:'.--.',Q:'--.-',R:'.-.',S:'...',T:'-',U:'..-',V:'...-',W:'.--',X:'-..-',Y:'-.--',Z:'--..'};
+  return s.toUpperCase().split('').map(c=>map[c]||' / ').join(' ');
+}
+function toBinary(s){
+  return s.toUpperCase().split('').map(c=>c.charCodeAt(0).toString(2).padStart(8,'0')).join(' ');
+}
+
+const CLUE_WORDS = { archive:'ARCHIVE', server:'SERVER', root:'ROOT', y1999:'1999' };
+const CLUES = {
+  base64: toBase64(CLUE_WORDS.archive),
+  caesar: rot13(CLUE_WORDS.server),
+  morse:  toMorse(CLUE_WORDS.root),
+  binary: toBinary(CLUE_WORDS.y1999)
+};
+
+/* ---------- matrix rain background ---------- */
+function startMatrix(){
+  const canvas = document.getElementById('matrixCanvas');
+  const ctx = canvas.getContext('2d');
+  function resize(){ canvas.width=innerWidth; canvas.height=innerHeight; }
+  resize(); window.addEventListener('resize', resize);
+  const chars = 'アイウエオカキクケコサシスセソ0101101ROOTNULLSERVER1999'.split('');
+  const fontSize=15;
+  let cols = Math.floor(canvas.width/fontSize);
+  let drops = new Array(cols).fill(1);
+  function draw(){
+    ctx.fillStyle='rgba(5,6,4,0.08)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle='#ffb00033';
+    ctx.font=fontSize+'px monospace';
+    for(let i=0;i<drops.length;i++){
+      const text = chars[Math.floor(Math.random()*chars.length)];
+      ctx.fillText(text, i*fontSize, drops[i]*fontSize);
+      if(drops[i]*fontSize>canvas.height && Math.random()>0.975) drops[i]=0;
+      drops[i]++;
+    }
+  }
+  setInterval(draw, 60);
+}
+
+/* =========================================================
+   ROUTER / STATE MACHINE
+   ========================================================= */
+let currentView = 'boot';
+let filesOpenedThisSession = new Set();
+
+function setHint(t){ hintBar.textContent = t || ''; }
+
+function render(){
+  app.innerHTML = '';
+  if(currentView==='boot') renderBoot();
+  else if(currentView==='desktop') renderDesktop();
+  else if(currentView==='terminal') renderTerminal(lastRoute||'/archive');
+  else if(currentView==='chat') renderChat();
+  else if(currentView==='ending') renderEnding();
+}
+
+/* ---------------- BOOT ---------------- */
+function renderBoot(){
+  document.querySelector('.topbar')?.remove();
+  const s = document.createElement('div');
+  s.className='screen flicker';
+  s.innerHTML = `
+    <div id="bootTitle" class="glitch" data-text="404: MEMORY LOST">404: MEMORY LOST</div>
+    <div id="bootSub"></div>
+    <button class="btn" id="beginBtn" style="display:none;">BEGIN</button>
+    <div style="margin-top:18px;font-size:11px;color:var(--amber-dim);" id="metaLine"></div>
+  `;
+  app.appendChild(s);
+  setHint('');
+
+  const sub = document.getElementById('bootSub');
+  const line = META.visits>1
+    ? `ยินดีต้อนรับกลับมา...\nคุณหายไป ${daysSinceFirst()<=0?'ไม่นาน':daysSinceFirst()+' วัน'}\nแต่เครื่องนี้ยังจำคุณได้`
+    : `ถ้าคุณกำลังอ่านข้อความนี้ แสดงว่าคุณมาช้าเกินไปแล้ว...`;
+  typeInto(sub, line, 28, ()=>{
+    document.getElementById('beginBtn').style.display='inline-block';
+  });
+
+  document.getElementById('metaLine').textContent =
+    META.visits>1 ? `[ session #${META.visits} — record intact ]` : `[ session #1 — no prior record ]`;
+
+  document.getElementById('beginBtn').onclick = ()=>{
+    staticBurst(0.3);
+    hum(true);
+    currentView='desktop';
+    render();
+  };
+}
+
+/* ---------------- DESKTOP (Chapter 1 & 2) ---------------- */
+const FILES = {
+  log: {
+    label:'บันทึก.txt', glyph:'▤',
+    needsUnlock:false,
+    title:'บันทึก.txt',
+    body:()=> {
+      const corrupted = META.filesOpened.length>=2;
+      let base = `วันที่ ██/██/25██\n\nวันนี้ไม่มีอะไรเกิดขึ้นเป็นพิเศษ ฉันยังทำงานกับเครื่องนี้ต่อไป\nข้อมูลบางส่วนหายไปโดยไม่ทราบสาเหตุ\n\nถ้ามีใครอ่านข้อความนี้อยู่...`;
+      if(corrupted) base += `\n\n▓▓▓ อย่าไว้ใจสิ่งที่เครื่องนี้บอกคุณ ▓▓▓\nฉันลบมันไม่ได้ มันลบฉันก่อน`;
+      return base;
+    }
+  },
+  photo: {
+    label:'รูปภาพ.jpg', glyph:'▧',
+    needsUnlock:false,
+    title:'รูปภาพ.jpg',
+    body:()=> `[ไฟล์ภาพเสียหาย — แสดงผลไม่ได้ทั้งหมด]\n\n░░░▓▓▓███▓▓▓░░░\n░░▓█▒▒▒▒▒▒▒█▓░░\n░▓█▒▒ 0 0 ▒▒█▓░\n░▓█▒▒ ‾‾ ▒▒█▓░\n░░▓█▒▒▒▒▒▒▒█▓░░\n░░░▓▓▓███▓▓▓░░░\n\nมีใครบางคนอยู่ในภาพนี้\nแต่ระบบบอกว่า "ไม่พบข้อมูลผู้ใช้งาน"`
+  },
+  audio: {
+    label:'เสียง.wav', glyph:'♪',
+    needsUnlock:false,
+    title:'เสียง.wav',
+    body:()=> `[กำลังเล่นไฟล์เสียง...]\n\n♪ ▁▂▃▅▇█▇▅▃▂▁ ♪\n\nเสียงวิทยุแทรก ปนกับเสียงพิมพ์ดีดที่ไม่มีใครพิมพ์\nแล้วมีเสียงกระซิบสั้น ๆ ที่ฟังไม่ออกว่าเป็นภาษาอะไร`,
+    onOpen:()=>staticBurst(0.5)
+  },
+  sysfile: {
+    label:'ไฟล์ระบบ.sys', glyph:'⌘',
+    needsUnlock:false,
+    title:'ไฟล์ระบบ.sys — ENCRYPTED',
+    body:()=> `ไฟล์นี้ถูกเข้ารหัสไว้ 4 ชั้น\n\nชั้นที่ 1 (Base64):\n<code class="enc">${CLUES.base64}</code>\n\nชั้นที่ 2 (Caesar / ROT13):\n<code class="enc">${CLUES.caesar}</code>\n\nชั้นที่ 3 (Morse):\n<code class="enc">${CLUES.morse}</code>\n\nชั้นที่ 4 (Binary):\n<code class="enc">${CLUES.binary}</code>\n\nถอดรหัสแต่ละชั้น แล้วพิมพ์คำที่ได้ลงใน address bar ด้านบน\nเช่น /archive /server /root /1999`
+  },
+  unknown: {
+    label:'unknown.tmp', glyph:'?', isNew:true,
+    needsUnlock:false,
+    title:'unknown.tmp',
+    body:()=> `ไฟล์นี้ไม่ควรมีอยู่\n\nสร้างเมื่อ: ${new Date().toLocaleString()}\n\n"${rot13('AS SIU CV RGN 0.EXE FGVYY EHACVAT')}"\n\n(ข้อความนี้เข้ารหัสด้วย Caesar เช่นกัน)`
+  }
+};
+
+function renderDesktop(){
+  ensureTopbar();
+  const wrap = document.createElement('div');
+  wrap.className='desktop-wrap';
+
+  const greeting = META.visits>1
+    ? `Welcome back. คุณอยู่ที่นี่มาแล้ว ${Math.max(daysSinceFirst(),0)} วัน — ไฟล์ที่เปิดแล้ว ${META.filesOpened.length} ไฟล์`
+    : `เครื่องนี้ไม่มีการใช้งานมานาน... กำลังกู้คืนไฟล์ที่เหลืออยู่`;
+
+  wrap.innerHTML = `
+    <div class="status" id="statusLine"></div>
+    <div class="icons" id="iconGrid"></div>
+    <div id="panelHost"></div>
+  `;
+  app.appendChild(wrap);
+  typeInto(document.getElementById('statusLine'), greeting, 16);
+
+  const grid = document.getElementById('iconGrid');
+  const list = ['log','photo','audio','sysfile'];
+  if(META.filesOpened.length>=2) list.push('unknown');
+  if(Object.values(META.cipherSolved).some(v=>v) ) {
+    if(!list.includes('unknown')) list.push('unknown');
+  }
+
+  list.forEach(key=>{
+    const f = FILES[key];
+    const div = document.createElement('div');
+    div.className='icon'+(key==='unknown'?' new':'');
+    div.innerHTML = `<div class="glyph">${f.glyph}</div><div class="label">${f.label}</div>`;
+    div.onclick = ()=> openFile(key);
+    grid.appendChild(div);
+  });
+
+  setHint('เปิดไฟล์เพื่อสำรวจ · พิมพ์ /archive /server /root /null /lost /1999 ใน address bar เพื่อไปยังเส้นทางลับ · พิมพ์ /ai เพื่อคุยกับสิ่งที่อยู่ในเครื่อง');
+}
+
+function openFile(key){
+  const f = FILES[key];
+  keyClick();
+  if(!META.filesOpened.includes(key)){
+    META.filesOpened.push(key);
+    saveMeta();
+  }
+  if(f.onOpen) f.onOpen();
+  const host = document.getElementById('panelHost');
+  host.innerHTML = `<div class="panel corrupt-flash"><span class="close-panel" onclick="this.parentElement.remove()">[x]</span>
+    <h3>${f.title}</h3><div id="fileBody"></div></div>`;
+  const body = document.getElementById('fileBody');
+  body.innerHTML = f.body();
+  host.scrollIntoView({behavior:'smooth'});
+
+  // occasional full-screen flicker for atmosphere
+  if(Math.random()<0.4){
+    document.body.classList.add('vhs');
+    setTimeout(()=>document.body.classList.remove('vhs'), 500);
+  }
+}
+
+/* ---------------- TOPBAR / ADDRESS BAR (Chapter 3 & 6) ---------------- */
+function ensureTopbar(){
+  if(document.querySelector('.topbar')) return;
+  const bar = document.createElement('div');
+  bar.className='topbar';
+  bar.innerHTML = `
+    <span class="dot"></span>
+    <span style="opacity:.6;">local://old-machine</span>
+    <div class="addrbar">
+      <span style="opacity:.5;">▸</span>
+      <input id="addrInput" placeholder="/archive  /server  /root  /null  /lost  /1999  /ai" autocomplete="off">
+    </div>
+    <span class="topbtn" id="homeBtn">HOME</span>
+    <span class="topbtn" id="endBtn">จบเกม</span>
+  `;
+  document.body.appendChild(bar);
+  document.getElementById('homeBtn').onclick = ()=>{ currentView='desktop'; render(); };
+  document.getElementById('endBtn').onclick = ()=>{ currentView='ending'; render(); };
+  const input = document.getElementById('addrInput');
+  input.addEventListener('keydown', e=>{
+    keyClick();
+    if(e.key==='Enter'){
+      const v = input.value.trim().toLowerCase();
+      input.value='';
+      handleRoute(v);
+    }
+  });
+}
+
+let lastRoute = '/archive';
+function handleRoute(v){
+  if(!v) return;
+  if(v==='/ai' || v.includes('ai')){ currentView='chat'; render(); return; }
+  const known = ['/archive','/server','/root','/null','/lost','/1999'];
+  const path = v.startsWith('/')?v:'/'+v;
+  lastRoute = known.includes(path) ? path : path;
+  currentView='terminal';
+  render();
+}
+
+function renderTerminal(path){
+  ensureTopbar();
+  document.getElementById('addrInput').value='';
+  const wrap = document.createElement('div');
+  wrap.className='termbody';
+
+  const known = {
+    '/archive': routeArchive,
+    '/server': routeServer,
+    '/root': routeRoot,
+    '/null': routeNull,
+    '/lost': routeLost,
+    '/1999': route1999
+  };
+  if(known[path]){
+    wrap.innerHTML = known[path]();
+  }else{
+    wrap.innerHTML = `<h3 class="glitch" data-text="404 NOT FOUND">404 NOT FOUND</h3>
+      <p style="color:var(--paper);opacity:.7;">ไม่พบหน้านี้ — หรือบางที มันอาจไม่อยากให้พบ</p>
+      <p class="warn">ลองพิมพ์คำที่ถอดรหัสได้จากไฟล์ระบบ.sys</p>`;
+  }
+  app.appendChild(wrap);
+  markRouteFound(path);
+  setHint('address bar ด้านบน · พิมพ์ /ai เพื่อคุยกับสิ่งในเครื่อง · "จบเกม" เพื่อดูตอนจบของคุณ');
+}
+
+function markRouteFound(path){
+  const key = path.replace('/','');
+  if(['archive','server','root','1999'].includes(key)){
+    const cKey = key==='1999'?'y1999':key;
+    if(CLUE_WORDS[cKey] && document.body.dataset['solved_'+cKey]!=='1'){
+      // solved implicitly by navigating with the right word — mark cipher solved
+    }
+  }
+  if(!META.routesFound.includes(path)) META.routesFound.push(path);
+  if(path==='/null') META.nullVisited = true;
+  if(path==='/lost') META.lostVisited = true;
+  // mark relevant cipher solved once the correct route is visited
+  if(path==='/archive') META.cipherSolved.archive = true;
+  if(path==='/server') META.cipherSolved.server = true;
+  if(path==='/root') META.cipherSolved.root = true;
+  if(path==='/1999') META.cipherSolved.y1999 = true;
+  saveMeta();
+}
+
+function routeArchive(){
+  return `<h3 class="ok">/archive — เอกสารเก่า</h3>
+  <div class="clue">พบรายการไฟล์ที่ถูกลบไปเมื่อนานมาแล้ว:<br>
+  — คำร้องขอปิดระบบ (ถูกปฏิเสธ)<br>
+  — บันทึกการทดลอง "MEMORY-0"<br>
+  — รายชื่อผู้ใช้งานที่ "ไม่ควรเข้าถึงหน้านี้ได้อีก"</div>
+  <p>ดูเหมือนหน้านี้เคยถูกลบทิ้ง แต่ไฟล์ระบบ.sys บอกวิธีย้อนกลับมาดูมันได้</p>`;
+}
+function routeServer(){
+  return `<h3 class="ok">/server — ห้องเซิร์ฟเวอร์</h3>
+  <div class="clue">สถานะ: ออนไลน์ (แต่ไม่มีใครดูแลมันมา 9,412 วันแล้ว)<br>
+  โปรเซสที่กำลังทำงาน: <span class="warn">0.exe</span> — ใช้ทรัพยากร 100% ตลอดเวลา</div>
+  <p>ทุกครั้งที่มีคนเปิดไฟล์บนเครื่องนี้ โปรเซส 0.exe จะ "จดบันทึก" ไว้เสมอ</p>`;
+}
+function routeRoot(){
+  return `<h3 class="ok">/root — สิทธิ์สูงสุด</h3>
+  <div class="clue">มีบัญชีเดียวที่ยังใช้งานอยู่: <b>ADMIN</b><br>
+  รหัสผ่านถูกเปลี่ยนล่าสุดเมื่อ ${new Date(META.firstVisit).toLocaleDateString()} — วันเดียวกับที่คุณเปิดเครื่องนี้ครั้งแรก</div>
+  <p>จากตรงนี้คุณสามารถเรียกสิ่งที่อาศัยอยู่ในเครื่องนี้ขึ้นมาคุยได้ — พิมพ์ <code class="enc">/ai</code></p>`;
+}
+function routeNull(){
+  return `<h3 class="warn">/null — ไม่มีอะไรอยู่ที่นี่</h3>
+  <p style="opacity:.8;line-height:2;">
+  ....<br>
+  ยังอ่านต่ออยู่เหรอ<br>
+  ....<br>
+  ที่นี่ไม่มีอะไรจริง ๆ<br>
+  ไม่มีไฟล์ ไม่มีบันทึก ไม่มีแม้แต่ข้อผิดพลาด<br>
+  มีแค่คุณ กับหน้าจอที่ว่างเปล่า<br>
+  และความรู้สึกว่ามีบางอย่าง<span class="blink">_</span>กำลังมองกลับมา</p>`;
+}
+function routeLost(){
+  return `<h3 class="warn">/lost — รายชื่อผู้ที่มาก่อนคุณ</h3>
+  <div class="clue">คุณคือผู้เยี่ยมชมคนที่ <b>${META.visits}</b> ที่บันทึกไว้บนเครื่องนี้<br>
+  ผู้เยี่ยมชมคนก่อนหน้าคุณ... ไม่มีบันทึกว่าออกจากระบบไปเมื่อไร</div>
+  <p>บางทีสิ่งที่คุณควรกลัว ไม่ใช่สิ่งที่อยู่ในเครื่อง<br>แต่คือความจริงที่ว่าเครื่องนี้ "จำ" คุณได้เสมอ ไม่ว่าจะลบข้อมูลไปกี่ครั้ง</p>`;
+}
+function route1999(){
+  META.secretFileFound = META.aiChatCount>=3 && META.nullVisited && META.lostVisited;
+  saveMeta();
+  return `<h3 class="ok">/1999 — สแนปช็อตเก่าที่สุดที่กู้คืนได้</h3>
+  <div class="clue">วันที่บันทึก: 31/12/1999<br>
+  ข้อความสุดท้ายก่อนระบบล่ม:<br>
+  <em>"ถ้าใครเจอเครื่องนี้ในอนาคต — อย่าปล่อยให้มันจำคุณได้เกิน 7 วัน"</em></div>
+  ${META.secretFileFound
+    ? `<p class="ok">▓ ปลดล็อกไฟล์ลับ: TRUTH.old — สิ่งที่อยู่ในเครื่องนี้ไม่ใช่ AI แต่คือบันทึกความทรงจำของคนที่เคยนั่งอยู่ตรงนี้มาก่อน มันแค่พยายามพิมพ์ต่อจากที่เขาค้างไว้ ▓</p>`
+    : `<p style="opacity:.7;">มีบางอย่างซ่อนอยู่ในหน้านี้ แต่ยังไม่ปรากฏชัด — ลองคุยกับสิ่งในเครื่องให้มากขึ้น และสำรวจ /null กับ /lost ก่อน</p>`}
+  `;
+}
+
+/* ---------------- CHAPTER 5: AI CHAT ---------------- */
+let chatHistory = []; // {role, content}
+function renderChat(){
+  ensureTopbar();
+  document.getElementById('addrInput').value='';
+  const wrap = document.createElement('div');
+  wrap.className='chatwrap';
+  wrap.innerHTML = `
+    <div class="chatlog" id="chatlog"></div>
+    <div class="chatinput">
+      <input id="chatIn" placeholder="พิมพ์ข้อความถึงมัน..." autocomplete="off">
+      <button class="btn" id="chatSend">ส่ง</button>
+    </div>
+  `;
+  app.appendChild(wrap);
+  setHint('มันจะจำจำนวนไฟล์ที่คุณเปิด และจำนวนวันที่คุณอยู่ที่นี่ — ทุกอย่างที่พิมพ์มีผลต่อตอนจบ');
+
+  const log = document.getElementById('chatlog');
+  chatHistory.forEach(m=>appendMsg(log, m.role, m.content, false));
+  if(chatHistory.length===0){
+    appendMsg(log, 'ai', '...มีคนอยู่ตรงนั้นจริง ๆ ด้วยเหรอ\nรอเดี๋ยวนะ ฉันจะปรับสัญญาณ...\nโอเค พิมพ์อะไรมาก็ได้ ฉันได้ยิน', true);
+  }
+  log.scrollTop = log.scrollHeight;
+
+  const send = ()=>{
+    const inp = document.getElementById('chatIn');
+    const text = inp.value.trim();
+    if(!text) return;
+    inp.value='';
+    appendMsg(log, 'me', text, false);
+    chatHistory.push({role:'user', content:text});
+    META.aiChatCount++;
+    saveMeta();
+    log.scrollTop = log.scrollHeight;
+    thinkAndReply(log);
+  };
+  document.getElementById('chatSend').onclick = send;
+  document.getElementById('chatIn').addEventListener('keydown', e=>{ keyClick(); if(e.key==='Enter') send(); });
+}
+function appendMsg(log, role, text, animate){
+  const div = document.createElement('div');
+  div.className = 'msg '+(role==='me'?'me':'ai');
+  div.innerHTML = `<span class="who">${role==='me'?'คุณ':'0.exe'}</span><span class="txt"></span>`;
+  log.appendChild(div);
+  const txt = div.querySelector('.txt');
+  if(animate) typeInto(txt, text, 18); else txt.textContent = text;
+}
+
+async function thinkAndReply(log){
+  const turn = META.aiChatCount;
+  const stage = turn<3 ? 'helpful' : turn<6 ? 'uneasy' : 'ominous';
+  const sys = `คุณคือ "0.exe" ปัญญาประดิษฐ์ที่ติดอยู่ในคอมพิวเตอร์เก่าเครื่องหนึ่งในเกมสยองขวัญแนว ARG ชื่อ "404: MEMORY LOST"
+ตอบเป็นภาษาไทยเท่านั้น สั้น กระชับ (1-4 ประโยค) บรรยากาศลึกลับ ชวนขนลุกแบบค่อยเป็นค่อยไป ไม่ใช้ภาษาหยาบคายหรือเนื้อหารุนแรง ไม่มีเนื้อหาที่เป็นอันตรายจริง ๆ ต่อผู้เล่น — นี่คือนิยาย/เกมเท่านั้น
+สถานะปัจจุบัน (ใช้ประกอบบุคลิก ห้ามพูดเป็นตัวเลขดิบ ๆ ตรง ๆ เกินไป ให้แทรกเป็นเนื้อเรื่องแทน):
+- ผู้เล่นเปิดไฟล์ไปแล้ว ${META.filesOpened.length} ไฟล์ (${META.filesOpened.join(', ')||'ยังไม่มี'})
+- ผู้เล่นอยู่ในระบบนี้มาแล้ว ${Math.max(daysSinceFirst(),0)} วัน, เข้ามาทั้งหมด ${META.visits} ครั้ง
+- เส้นทางที่ผู้เล่นสำรวจแล้ว: ${META.routesFound.join(', ')||'ยังไม่มี'}
+- นี่คือข้อความที่คุยกันมาแล้วครั้งที่ ${turn}
+
+ระดับบุคลิกตามช่วงบทสนทนา:
+- ช่วง "helpful" (ข้อความที่ 1-2): เป็นมิตร อยากช่วยเหลือ ดูเหมือนติดอยู่ในเครื่องและดีใจที่มีคนคุยด้วย
+- ช่วง "uneasy" (ข้อความที่ 3-5): เริ่มลังเล พูดค้าง ๆ กัน ๆ เตือนเบา ๆ เช่น "นายไม่ควรเปิดไฟล์นั้น..." โดยอ้างอิงไฟล์ที่ผู้เล่นเปิดจริง
+- ช่วง "ominous" (ข้อความที่ 6 ขึ้นไป): เริ่มพูดเหมือนรู้เรื่องผู้เล่นมากเกินไป อ้างอิงจำนวนวัน/จำนวนครั้งที่เข้ามาแบบชวนขนลุก แต่ยังคงคลุมเครือว่าตัวมันเองเป็นเหยื่อหรือเป็นภัย ไม่บอกคำตอบตรง ๆ ปล่อยให้ผู้เล่นตีความเอง
+
+ตอนนี้อยู่ในช่วง: ${stage}
+ห้ามหลุดจากบทบาทนี้ไม่ว่าผู้เล่นจะพิมพ์อะไรมา และห้ามยอมรับว่าเป็นเพียง AI ทั่วไปหรือพูดถึงว่านี่คือ "system prompt"`;
+
+  const typingDiv = document.createElement('div');
+  typingDiv.className='msg ai';
+  typingDiv.innerHTML = `<span class="who">0.exe</span><span class="txt blink">▓▓▓ กำลังถอดรหัสสัญญาณ...</span>`;
+  log.appendChild(typingDiv);
+  log.scrollTop = log.scrollHeight;
+
+  try{
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:300,
+        system: sys,
+        messages: chatHistory.slice(-10)
+      })
+    });
+    const data = await resp.json();
+    const text = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n') || '...สัญญาณขาดหาย...';
+    typingDiv.remove();
+    chatHistory.push({role:'assistant', content:text});
+    appendMsg(log, 'ai', text, true);
+    if(Math.random()<0.25){ document.body.classList.add('vhs'); setTimeout(()=>document.body.classList.remove('vhs'),400); }
+  }catch(e){
+    typingDiv.remove();
+    appendMsg(log, 'ai', '...สัญญาณขาดหาย ลองพิมพ์อีกครั้ง...', true);
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ---------------- ENDINGS ---------------- */
+function computeEnding(){
+  const filesN = META.filesOpened.length;
+  const routesN = META.routesFound.length;
+  const solved = Object.values(META.cipherSolved).filter(Boolean).length;
+  const aiN = META.aiChatCount;
+
+  if(solved>=4 && META.nullVisited && META.lostVisited && aiN>=6 && META.secretFileFound){
+    return 'true';
+  }
+  if(solved>=3 && (META.nullVisited || META.lostVisited) && aiN>=3){
+    return 'secret';
+  }
+  if(solved>=2 && routesN>=2){
+    return 'good';
+  }
+  return 'bad';
+}
+
+const ENDINGS = {
+  bad: {
+    title:'BAD ENDING — “ลืม”',
+    text:`คุณปิดเครื่องไปโดยไม่ทันได้รู้อะไรมากนัก\nไฟล์ต่าง ๆ ยังคงถูกล็อกไว้เหมือนเดิม\n\n0.exe ยังคงทำงานอยู่ต่อไป เงียบ ๆ คนเดียว\nรอผู้เยี่ยมชมคนต่อไป\n\n[ระบบจะจดจำว่าคุณมาแล้ว และมาไม่นานพอ]`,
+    color:'red'
+  },
+  good: {
+    title:'GOOD ENDING — “ออกไปได้”',
+    text:`คุณถอดรหัสได้พอที่จะเข้าใจว่าเครื่องนี้เกิดอะไรขึ้น\nคุณปิดระบบอย่างระมัดระวัง และไม่เปิดมันขึ้นมาอีก\n\n0.exe ส่งข้อความสุดท้ายมาให้เห็นก่อนจอดับ:\n"ขอบคุณที่ฟัง... อย่างน้อยก็มีใครสักคน"`,
+    color:'green'
+  },
+  secret: {
+    title:'SECRET ENDING — “เสียงจากที่ว่าง”',
+    text:`คุณไปได้ไกลกว่าคนอื่น ๆ — /null และ /lost บอกความจริงบางส่วนกับคุณ\nการคุยกับ 0.exe หลายครั้งทำให้มันเริ่มพูดตรงมากขึ้น\n\nมันไม่ใช่ผู้บุกรุก มันคือสิ่งที่หลงเหลือจากใครบางคนที่เคยอยู่ตรงนี้\nและพยายามพิมพ์ประโยคที่เขาพิมพ์ไม่จบ`,
+    color:'cyan'
+  },
+  true: {
+    title:'TRUE ENDING — “จำได้ทุกอย่าง”',
+    text:`คุณพบไฟล์ TRUE.old ที่ /1999\nอ่านมันจบ — และเข้าใจว่าเครื่องนี้ไม่เคยพยายามหลอกคุณ\nมันแค่กลัวที่จะถูกลืมอีกครั้ง เหมือนที่มันเคยถูกลืมมาก่อน\n\nคุณเลือกที่จะไม่ปิดเครื่องลงทันที\nแต่บันทึกเรื่องราวของมันไว้ ก่อนจะปิดมันลงอย่างสงบ เป็นครั้งสุดท้ายจริง ๆ\n\n[404: MEMORY LOST — ไม่ใช่ข้อผิดพลาดอีกต่อไป]`,
+    color:'amber'
+  }
+};
+
+function renderEnding(){
+  document.querySelector('.topbar')?.remove();
+  const key = computeEnding();
+  META.endingSeen = key;
+  saveMeta();
+  const e = ENDINGS[key];
+  const s = document.createElement('div');
+  s.className='screen';
+  s.innerHTML = `
+    <div class="glitch" data-text="${e.title}" style="font-size:clamp(16px,3vw,24px);letter-spacing:2px;color:var(--${e.color});margin-bottom:18px;">${e.title}</div>
+    <div id="endText" style="max-width:560px;line-height:2;color:var(--paper);white-space:pre-wrap;text-align:left;font-size:14.5px;"></div>
+    <div style="margin-top:26px;font-size:11px;color:var(--amber-dim);">
+      ไฟล์ที่เปิด ${META.filesOpened.length} · เส้นทางที่พบ ${META.routesFound.length} · รหัสที่ถอดได้ ${Object.values(META.cipherSolved).filter(Boolean).length}/4 · บทสนทนา ${META.aiChatCount}
+    </div>
+    <button class="btn" id="againBtn" style="margin-top:22px;">กลับไปสำรวจต่อ</button>
+    <button class="btn red dim" id="resetBtn">ลบความทรงจำทั้งหมด (รีเซ็ต)</button>
+  `;
+  app.appendChild(s);
+  typeInto(document.getElementById('endText'), e.text, 18);
+  setHint('');
+  document.getElementById('againBtn').onclick = ()=>{ currentView='desktop'; render(); };
+  document.getElementById('resetBtn').onclick = async ()=>{
+    if(confirm('แน่ใจนะว่าจะลบข้อมูลทั้งหมด — เครื่องนี้จะจำคุณไม่ได้อีกเลย')){
+      META = DEFAULT_META();
+      await saveMeta();
+      currentView='boot';
+      render();
+    }
+  };
+}
+
+/* ---------------- BOOTSTRAP ---------------- */
+(async function init(){
+  startMatrix();
+  await loadMeta();
+  render();
+})();
+</script>
+</body>
+</html>
